@@ -250,3 +250,53 @@ Mudit Agrawal
 ## ⭐ If you like this project
 
 Give it a ⭐ and take it further 🚀
+
+
+
+
+ # problem 2 :: 
+ # 🫀 ECG Rhythm Analysis & Atrial Fibrillation Detection
+
+## 📌 Project Overview
+This project analyzes a **single-lead ECG signal** to detect:
+- Regular vs Irregular heart rhythms  
+- Possible **Atrial Fibrillation (AF)** patterns  
+- Segment-wise rhythm changes over time  
+
+It extends basic **R-peak detection** into full rhythm analysis.
+
+---
+
+## 🎯 Problem Statement
+Given a long ECG recording containing:
+- Normal beats  
+- Irregular beats  
+- Noisy segments  
+- Rhythm transitions  
+
+We aim to:
+1. Analyze **R–R intervals**
+2. Detect **regular vs irregular rhythm**
+3. Segment ECG into different rhythm regions
+4. Identify **possible atrial fibrillation**
+5. Build an **automated AF detection pipeline**
+
+---
+
+## ⚙️ Tech Stack
+- Python 🐍
+- NumPy
+- SciPy
+- Matplotlib
+- XML Parsing (ElementTree)
+
+---
+
+## 📂 Input Format
+The ECG data is provided in **XML format** containing:
+- Sampling Rate  
+- Time-stamped ECG samples  
+
+Example:
+```xml
+<Sample time="0.0000">-10132.20</Sample>
