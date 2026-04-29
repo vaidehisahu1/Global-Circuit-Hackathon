@@ -1,106 +1,252 @@
-# Universal Smart ECG Analyzer (Clinical-Style Visualization)
+# 🏥 Universal Smart ECG Analyzer
 
-## 📌 Problem Statement
-
-ECG data is often noisy, inconsistent, and stored in different formats. Extracting meaningful heart rate and rhythm information reliably is challenging.
+A robust system for **heart rate detection from single-lead ECG signals** that works across both **HL7 aECG (XML)** and **custom binary formats**, even in the presence of noise, motion artifacts, and signal irregularities.
 
 ---
 
-## 🚀 Solution
+## 🚀 Problem Statement
 
-This project builds a **robust ECG analysis system** that:
+Continuous ECG monitoring often suffers from:
 
-* Supports XML (.aecg) and binary ECG formats
-* Cleans noisy signals using advanced filtering
-* Detects heart rate robustly
-* Visualizes ECG in **hospital-style calibrated format**
+* Noise and motion artifacts
+* Baseline drift
+* Missing or distorted waveforms
+* Irregular heart rhythms over long durations
 
----
+The goal is to:
 
-## ⚙️ Key Features
-
-### 1. Multi-format ECG Parsing
-
-* XML (HL7 aECG)
-* Binary format support
+> Accurately estimate heart rate from a continuous single-lead ECG signal by detecting **R-peaks** and handling real-world signal challenges.
 
 ---
 
-### 2. Advanced Signal Processing
+## 💡 Solution Overview
 
-* High-pass filter → removes baseline drift
-* Low-pass filter → removes noise
-* Notch filter → removes 50 Hz interference
+This project implements a **complete ECG processing pipeline**:
 
----
+### 🔬 Core Workflow
 
-### 3. Robust Peak Detection
+1. **Data Acquisition**
 
-* Primary: NeuroKit-based detection
-* Fallback: Custom peak detection
+   * Supports:
 
----
+     * HL7 `.aecg` / `.xml`
+     * Custom binary ECG format (10-byte records)
 
-### 4. Heart Rate Analysis
+2. **Signal Preprocessing**
 
-* RR interval computation
-* Outlier filtering
-* Stable HR estimation
+   * Bandpass filtering (0.5–40 Hz)
+   * Noise reduction
+   * Baseline drift removal
+   * Signal normalization
 
----
+3. **R-Peak Detection**
 
-### 5. Clinical ECG Visualization
+   * Primary: NeuroKit2 ECG processing
+   * Fallback: Custom peak detection (`scipy.find_peaks`)
 
-Simulates real ECG machines:
+4. **Heart Rate Calculation**
 
-* 25 mm/sec time scaling
-* 10 mm/mV amplitude scaling
-* Small & large ECG grid
-* Highlighted R-peaks
+   * RR interval computation
+   * Filtering physiologically valid intervals (0.4s–1.5s)
+   * BPM estimation
 
----
+5. **Signal Analysis**
 
-## 📊 Output
-
-* Heart Rate (BPM)
-* Signal Quality
-* Stability
-* Status (Normal / Abnormal / Irregular)
+   * Signal quality estimation
+   * Heart rate stability analysis
+   * Rhythm classification
 
 ---
 
-## 🧠 Design Highlights
+## 🧠 Key Features
 
-* Robust to noisy data
-* Works with short signals
-* Fail-safe peak detection
-* Clinically inspired visualization
+✅ Works on **noisy real-world ECG signals**
+✅ Supports **multiple file formats**
+✅ **Automatic sampling rate detection**
+✅ **Fallback detection system (robust)**
+✅ Handles **irregular rhythms & missing beats**
+✅ Produces **clinical-style ECG visualizations**
+
+---
+
+## 📊 Visualizations
+
+The system generates multiple analytical plots:
+
+* 📈 Full ECG signal
+* 🔍 Zoomed ECG with R-peaks
+* 🧾 ECG strips (like hospital reports)
+* ⏱ RR interval variability
+* ❤️ Heart rate trend
+* 🔄 Poincaré plot (HRV analysis)
+
+All ECG plots include **realistic ECG paper grid** (1 mm / 5 mm style).
+
+---
+
+## 🏥 ECG Paper Simulation
+
+To mimic real clinical output:
+
+* Small grid: 0.04 sec (1 mm)
+* Large grid: 0.2 sec (5 mm)
+* Visual scaling approximates medical ECG layout
+
+---
+
+## 📂 Supported File Formats
+
+### 1. XML (.aecg / HL7)
+
+* Extracts `<Sample>` values
+* Reads `<SamplingRateHz>`
+
+### 2. Binary Format
+
+Each record = **10 bytes**
+
+| Bytes | Field     | Type  |
+| ----- | --------- | ----- |
+| 0–1   | ECG Value | int16 |
+| 2–9   | Timestamp | int64 |
+
+Sampling rate is inferred from timestamp differences.
+
+---
+
+## ⚙️ Installation
+
+```bash
+pip install numpy matplotlib scipy neurokit2
+```
+
+---
+
+## ▶️ Usage
+
+```bash
+python ecg.py
+```
+
+Then provide:
+
+```bash
+Enter ECG file path: ./ecg_data.aecg.xml
+```
+
+---
+
+## 📌 Output Example
+
+```text
+--- UNIVERSAL SMART ECG ANALYZER ---
+Heart Rate: 92.28 BPM
+Signal Quality: GOOD
+Stability: FLUCTUATING
+Status: IRREGULAR RHYTHM
+```
+
+---
+
+## 🧪 Algorithm Details
+
+### ✔ Preprocessing
+
+* Bandpass filter removes:
+
+  * Baseline drift (<0.5 Hz)
+  * High-frequency noise (>40 Hz)
+
+### ✔ R-Peak Detection
+
+* NeuroKit2 (advanced physiological model)
+* Fallback: Peak detection using:
+
+  * Minimum distance constraint
+  * Amplitude threshold
+
+### ✔ Heart Rate
+
+[
+HR = \frac{60}{\text{mean RR interval}}
+]
+
+### ✔ Robustness Enhancements
+
+* RR interval filtering (removes outliers)
+* Fallback mechanism (prevents failure)
+* Signal variance-based quality scoring
+
+---
+
+## 🚧 Improvements for Real-World Conditions
+
+✔ Already implemented:
+
+* Noise filtering
+* Baseline drift removal
+* Outlier RR filtering
+* Fallback peak detection
+
+⚠️ Future improvements:
+
+* Adaptive thresholding (Pan–Tompkins)
+* Motion artifact detection
+* Deep learning-based arrhythmia detection
+* Multi-lead ECG support
+
+---
+
+## ⏱ Performance on Continuous Data
+
+* Works on long signals (multi-hour capable)
+* Handles:
+
+  * Changing heart rates
+  * Irregular rhythms
+  * Signal interruptions
+
+Sliding-window style processing ensures adaptability.
 
 ---
 
 ## ⚠️ Limitations
 
-* Uses approximate mV scaling
-* Not a diagnostic medical tool
-* Short signals reduce reliability
-
----
-
-## 🔮 Future Work
-
-* Pan-Tompkins implementation
-* AI arrhythmia detection
-* PDF ECG report generation
-* Real-time monitoring system
+* Approximate amplitude scaling (not true mV)
+* Not calibrated to medical ECG standards
+* Not a certified diagnostic tool
+* Performance depends on signal quality
 
 ---
 
 ## 🏁 Conclusion
 
-This project demonstrates a **complete ECG analysis pipeline** with:
+This project provides a **robust and flexible ECG heart rate detection system** capable of handling real-world signal challenges.
 
-* Strong signal processing
-* Reliable heart rate detection
-* Professional-grade visualization
+It successfully demonstrates:
+
+* Signal processing pipeline
+* Robust peak detection
+* Clinical-style visualization
+* Multi-format ECG compatibility
 
 ---
+
+## 👨‍💻 Author
+
+Mudit Agrawal
+
+---
+
+## 📌 Future Scope
+
+* Real-time ECG monitoring UI
+* Medical-grade calibration
+* AI-based diagnosis
+* Web dashboard integration
+
+---
+
+## ⭐ If you like this project
+
+Give it a ⭐ and take it further 🚀
