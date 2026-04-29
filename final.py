@@ -1,0 +1,709 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
+import struct
+
+from scipy.signal import butter, filtfilt, find_peaks, savgol_filter
+
+
+# =========================================================
+# 1. FILE TYPE DETECTION
+# =========================================================
+def detect_file_type(filename):
+    if filename.endswith((".xml", ".aecg")):
+        return "xml"
+    return "binary"
+
+
+# =========================================================
+# 2. XML ECG PARSER
+# =========================================================
+def parse_xml_ecg(filename):
+    tree = ET.parse(filename)
+    root = tree.getroot()
+
+    values = []
+    times = []
+
+    fs = 250
+
+    sr = root.find(".//SamplingRateHz")
+    if sr is not None:
+        fs = float(sr.text)
+
+    for sample in root.findall(".//Sample"):
+        try:
+            values.append(float(sample.text))
+
+            if "time" in sample.attrib:
+                times.append(float(sample.attrib["time"]))
+            else:
+                times.append(len(values) / fs)
+        except:
+            pass
+
+    values = np.array(values)
+    times = np.array(times)
+
+    if len(values) == 0:
+        raise ValueError("No ECG samples found in XML file")
+
+    return values, times, fs
+
+
+# =========================================================
+# 3. BINARY ECG PARSER
+# =========================================================
+def parse_binary_ecg(filename):
+    values = []
+    timestamps = []
+
+    with open(filename, "rb") as f:
+        while True:
+            chunk = f.read(10)
+            if len(chunk) < 10:
+                break
+
+            values.append(struct.unpack("<h", chunk[:2])[0])
+            timestamps.append(struct.unpack("<q", chunk[2:])[0])
+
+    values = np.array(values)
+    timestamps = np.array(timestamps)
+
+    fs = estimate_sampling_rate(timestamps)
+    time = np.arange(len(values)) / fs
+
+    return values, time, fs
+
+
+# =========================================================
+# 4. SAMPLING RATE ESTIMATION
+# =========================================================
+def estimate_sampling_rate(timestamps):
+    if len(timestamps) < 2:
+        return 250
+
+    diffs = np.diff(timestamps)
+    diffs = diffs[diffs > 0]
+
+    if len(diffs) == 0:
+        return 250
+
+    return int(1000 / np.mean(diffs))
+
+
+# =========================================================
+# 5. ECG LOADER
+# =========================================================
+def load_ecg(filename):
+    file_type = detect_file_type(filename)
+
+    if file_type == "xml":
+        signal, time, fs = parse_xml_ecg(filename)
+    else:
+        signal, time, fs = parse_binary_ecg(filename)
+
+    print("File Type:", file_type)
+    print("Sampling Rate:", fs)
+    print("Signal Length:", len(signal))
+    print("Duration:", round(len(signal) / fs, 2), "seconds")
+
+    return signal, time, fs
+
+
+# =========================================================
+# 6. BANDPASS FILTER
+# =========================================================
+def bandpass_filter(signal, fs, low=0.5, high=40):
+    nyq = 0.5 * fs
+
+    if high >= nyq:
+        high = nyq - 1
+
+    b, a = butter(2, [low / nyq, high / nyq], btype="band")
+    return filtfilt(b, a, signal)
+
+
+# =========================================================
+# 7. SIGNAL QUALITY CHECK
+# =========================================================
+def signal_quality_index(signal):
+    std_val = np.std(signal)
+    max_val = np.max(np.abs(signal))
+
+    if std_val < 0.05:
+        return "POOR"
+
+    if max_val > 8 * std_val:
+        return "NOISY"
+
+    return "GOOD"
+
+
+# =========================================================
+# 8. SMART ECG ANALYSIS - PROBLEM 1 CORE
+# =========================================================
+def smart_ecg_analysis(ecg_signal, fs):
+    filtered = bandpass_filter(ecg_signal, fs)
+
+    filtered = (filtered - np.mean(filtered)) / (np.std(filtered) + 1e-8)
+
+    quality = signal_quality_index(filtered)
+
+    height_threshold = np.mean(filtered) + 0.7 * np.std(filtered)
+
+    r_peaks, properties = find_peaks(
+        filtered,
+        height=height_threshold,
+        distance=int(0.3 * fs),
+        prominence=0.5
+    )
+
+    if len(r_peaks) < 2:
+        return {
+            "filtered": filtered,
+            "r_peaks": r_peaks,
+            "rr": None,
+            "hr_series": None,
+            "avg_hr": 0,
+            "quality": quality,
+            "status": "NO PEAKS DETECTED"
+        }
+
+    rr = np.diff(r_peaks) / fs
+
+    clean_rr = rr[(rr > 0.3) & (rr < 2.0)]
+
+    if len(clean_rr) == 0:
+        return {
+            "filtered": filtered,
+            "r_peaks": r_peaks,
+            "rr": rr,
+            "hr_series": None,
+            "avg_hr": 0,
+            "quality": quality,
+            "status": "INVALID RR INTERVALS"
+        }
+
+    hr_series = 60 / clean_rr
+    avg_hr = 60 / np.mean(clean_rr)
+
+    if avg_hr < 60:
+        status = "LOW HEART RATE"
+    elif avg_hr > 100:
+        status = "HIGH HEART RATE"
+    else:
+        status = "NORMAL HEART RATE"
+
+    return {
+        "filtered": filtered,
+        "r_peaks": r_peaks,
+        "rr": rr,
+        "hr_series": hr_series,
+        "avg_hr": avg_hr,
+        "quality": quality,
+        "status": status
+    }
+
+
+# =========================================================
+# 9. RHYTHM CLASSIFICATION - PROBLEM 2 CORE
+# =========================================================
+def classify_rhythm(rr):
+    if rr is None or len(rr) < 3:
+        return "Too few beats for rhythm analysis", 0, 0
+
+    mean_rr = np.mean(rr)
+    sdnn = np.std(rr)
+    rmssd = np.sqrt(np.mean(np.diff(rr) ** 2))
+    cv = sdnn / mean_rr
+
+    if cv < 0.08:
+        label = "Normal Rhythm"
+    elif cv >= 0.15 and rmssd > 0.08:
+        label = "Possible AF / Irregularly Irregular Rhythm"
+    else:
+        label = "Irregular Rhythm"
+
+    return label, cv, rmssd
+
+
+# =========================================================
+# 10. SEGMENT-WISE ANALYSIS
+# =========================================================
+def segment_wise_analysis(r_peaks, fs, total_duration, window_sec=10):
+    results = []
+
+    if len(r_peaks) < 2:
+        return results
+
+    peak_times = r_peaks / fs
+    rr = np.diff(r_peaks) / fs
+
+    start = 0
+
+    while start < total_duration:
+        end = start + window_sec
+
+        idx = np.where((peak_times[:-1] >= start) & (peak_times[:-1] < end))[0]
+        seg_rr = rr[idx]
+
+        if len(seg_rr) >= 3:
+            label, cv, rmssd = classify_rhythm(seg_rr)
+
+            results.append({
+                "start": start,
+                "end": min(end, total_duration),
+                "beats": len(seg_rr) + 1,
+                "mean_rr": np.mean(seg_rr),
+                "mean_hr": 60 / np.mean(seg_rr),
+                "cv": cv,
+                "rmssd": rmssd,
+                "label": label
+            })
+
+        start += window_sec
+
+    return results
+
+
+# =========================================================
+# 11. P-WAVE DETECTION HEURISTIC
+# =========================================================
+def detect_p_wave_evidence(filtered, r_peaks, fs):
+    if len(r_peaks) < 3:
+        return 0, "Insufficient beats for P-wave analysis"
+
+    p_detected = 0
+    checked = 0
+
+    for r in r_peaks:
+        start = int(r - 0.25 * fs)
+        end = int(r - 0.08 * fs)
+
+        if start < 0 or end <= start:
+            continue
+
+        segment = filtered[start:end]
+        checked += 1
+
+        if len(segment) < 5:
+            continue
+
+        local_peaks, _ = find_peaks(
+            segment,
+            height=np.mean(segment) + 0.15 * np.std(segment),
+            prominence=0.05
+        )
+
+        if len(local_peaks) > 0:
+            p_detected += 1
+
+    if checked == 0:
+        return 0, "P-wave region not available"
+
+    p_wave_ratio = p_detected / checked
+
+    if p_wave_ratio > 0.6:
+        label = "Repeated P-waves likely present"
+    elif p_wave_ratio < 0.3:
+        label = "Repeated P-waves likely absent"
+    else:
+        label = "P-wave evidence unclear"
+
+    return p_wave_ratio, label
+
+
+# =========================================================
+# 12. ATRIAL ACTIVITY ANALYSIS
+# =========================================================
+def atrial_activity_analysis(filtered, r_peaks, fs):
+    if len(r_peaks) < 3:
+        return 0, "Insufficient beats for atrial activity analysis"
+
+    atrial_segments = []
+
+    for i in range(len(r_peaks) - 1):
+        start = int(r_peaks[i] + 0.12 * fs)
+        end = int(r_peaks[i + 1] - 0.12 * fs)
+
+        if end > start and end < len(filtered):
+            atrial_segments.extend(filtered[start:end])
+
+    atrial_segments = np.array(atrial_segments)
+
+    if len(atrial_segments) < fs * 0.5:
+        return 0, "Atrial segment too short"
+
+    atrial_variability = np.std(atrial_segments)
+
+    if atrial_variability > 0.45:
+        label = "Disorganized atrial activity likely"
+    else:
+        label = "Atrial activity appears relatively organized"
+
+    return atrial_variability, label
+
+
+# =========================================================
+# 13. ADVANCED AF DECISION
+# =========================================================
+def advanced_af_decision(rr, p_wave_ratio, atrial_variability):
+    if rr is None or len(rr) < 3:
+        return "Too few beats for AF decision"
+
+    mean_rr = np.mean(rr)
+    cv = np.std(rr) / mean_rr
+    rmssd = np.sqrt(np.mean(np.diff(rr) ** 2))
+
+    score = 0
+
+    if cv >= 0.15:
+        score += 1
+
+    if rmssd > 0.08:
+        score += 1
+
+    if p_wave_ratio < 0.3:
+        score += 1
+
+    if atrial_variability > 0.45:
+        score += 1
+
+    if score >= 3:
+        return "Strong Possible AF"
+    elif score == 2:
+        return "Possible AF"
+    elif score == 1:
+        return "Irregular / Needs Review"
+    else:
+        return "Normal Rhythm Likely"
+
+
+# =========================================================
+# 14. ROLLING WINDOW ANALYSIS
+# =========================================================
+def rolling_window_analysis(ecg_signal, fs, window_sec=30, step_sec=10):
+    window = int(window_sec * fs)
+    step = int(step_sec * fs)
+
+    rolling_results = []
+
+    if len(ecg_signal) < window:
+        return rolling_results
+
+    for start in range(0, len(ecg_signal) - window + 1, step):
+        end = start + window
+        segment = ecg_signal[start:end]
+
+        result = smart_ecg_analysis(segment, fs)
+
+        rr = result["rr"]
+        r_peaks = result["r_peaks"]
+        filtered = result["filtered"]
+
+        rhythm_label, cv, rmssd = classify_rhythm(rr)
+
+        p_ratio, p_label = detect_p_wave_evidence(filtered, r_peaks, fs)
+        atrial_var, atrial_label = atrial_activity_analysis(filtered, r_peaks, fs)
+
+        af_label = advanced_af_decision(rr, p_ratio, atrial_var)
+
+        rolling_results.append({
+            "start_sec": start / fs,
+            "end_sec": end / fs,
+            "avg_hr": result["avg_hr"],
+            "quality": result["quality"],
+            "rhythm": rhythm_label,
+            "cv": cv,
+            "rmssd": rmssd,
+            "p_wave_ratio": p_ratio,
+            "p_wave_label": p_label,
+            "atrial_variability": atrial_var,
+            "atrial_label": atrial_label,
+            "af_decision": af_label
+        })
+
+    return rolling_results
+
+
+# =========================================================
+# 15. ECG PAPER GRID
+# =========================================================
+def add_ecg_grid(ax):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+
+    for x in np.arange(xmin, xmax, 0.04):
+        ax.axvline(x, color="lightcoral", lw=0.3, alpha=0.25)
+
+    for x in np.arange(xmin, xmax, 0.2):
+        ax.axvline(x, color="red", lw=0.7, alpha=0.35)
+
+    for y in np.arange(ymin, ymax, 0.1):
+        ax.axhline(y, color="lightcoral", lw=0.3, alpha=0.25)
+
+    for y in np.arange(ymin, ymax, 0.5):
+        ax.axhline(y, color="red", lw=0.7, alpha=0.35)
+
+
+# =========================================================
+# 16. ALL ECG GRAPHS
+# =========================================================
+def plot_all_results(raw_signal, filtered, r_peaks, rr, hr_series, fs):
+    time = np.arange(len(raw_signal)) / fs
+
+    smooth = filtered / (np.max(np.abs(filtered)) + 1e-8)
+
+    if len(smooth) > 31:
+        smooth = savgol_filter(smooth, 31, 2)
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(time, raw_signal)
+    plt.title("Raw ECG Signal")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(time, filtered)
+    plt.title("Filtered ECG Signal")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Normalized Amplitude")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(time, filtered)
+    if len(r_peaks) > 0:
+        plt.scatter(r_peaks / fs, filtered[r_peaks], color="red", label="R-peaks")
+    plt.title("R-Peak Detection")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(time, smooth, color="black")
+    if len(r_peaks) > 0:
+        plt.scatter(r_peaks / fs, smooth[r_peaks], color="blue")
+    plt.title("ECG Paper Style with R-Peaks")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude")
+    ax = plt.gca()
+    add_ecg_grid(ax)
+    plt.tight_layout()
+    plt.show()
+
+    if rr is not None:
+        plt.figure(figsize=(10, 4))
+        plt.plot(rr, marker="o")
+        plt.title("R-R Interval Variation")
+        plt.xlabel("Beat Index")
+        plt.ylabel("RR Interval (seconds)")
+        plt.grid(True)
+        plt.show()
+
+    if hr_series is not None:
+        plt.figure(figsize=(10, 4))
+        plt.plot(hr_series, marker="o")
+        plt.axhline(60, linestyle="--", label="60 BPM")
+        plt.axhline(100, linestyle="--", label="100 BPM")
+        plt.title("Heart Rate Trend")
+        plt.xlabel("Beat Index")
+        plt.ylabel("Heart Rate (BPM)")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    if rr is not None:
+        plt.figure(figsize=(8, 4))
+        plt.hist(rr, bins=20)
+        plt.title("RR Interval Distribution")
+        plt.xlabel("RR Interval (seconds)")
+        plt.ylabel("Count")
+        plt.grid(True)
+        plt.show()
+
+    if rr is not None and len(rr) > 2:
+        plt.figure(figsize=(6, 6))
+        plt.scatter(rr[:-1], rr[1:])
+        plt.title("Poincaré Plot")
+        plt.xlabel("RR(n)")
+        plt.ylabel("RR(n+1)")
+        plt.grid(True)
+        plt.show()
+
+    freqs = np.fft.rfftfreq(len(filtered), d=1 / fs)
+    fft_vals = np.abs(np.fft.rfft(filtered))
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(freqs, fft_vals)
+    plt.xlim(0, 50)
+    plt.title("FFT Power Spectrum")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Magnitude")
+    plt.grid(True)
+    plt.show()
+
+
+# =========================================================
+# 17. ROLLING WINDOW GRAPHS
+# =========================================================
+def plot_rolling_results(rolling_results):
+    if len(rolling_results) == 0:
+        return
+
+    times = [r["start_sec"] for r in rolling_results]
+    hr = [r["avg_hr"] for r in rolling_results]
+    cv = [r["cv"] for r in rolling_results]
+    p_ratio = [r["p_wave_ratio"] for r in rolling_results]
+    atrial = [r["atrial_variability"] for r in rolling_results]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(times, hr, marker="o")
+    plt.title("Rolling Heart Rate Over Time")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Heart Rate (BPM)")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(times, cv, marker="o")
+    plt.title("Rolling RR Variability")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Coefficient of Variation")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(times, p_ratio, marker="o")
+    plt.title("Rolling P-wave Evidence")
+    plt.xlabel("Time (s)")
+    plt.ylabel("P-wave Ratio")
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(times, atrial, marker="o")
+    plt.title("Rolling Atrial Activity Variability")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Atrial Variability")
+    plt.grid(True)
+    plt.show()
+
+
+# =========================================================
+# 18. FINAL COMBINED PIPELINE
+# =========================================================
+def complete_ecg_pipeline(filename):
+    raw_signal, time, fs = load_ecg(filename)
+
+    print("\nRunning Problem 1: Heart Rate Detection...")
+    result = smart_ecg_analysis(raw_signal, fs)
+
+    filtered = result["filtered"]
+    r_peaks = result["r_peaks"]
+    rr = result["rr"]
+    hr_series = result["hr_series"]
+    avg_hr = result["avg_hr"]
+    quality = result["quality"]
+    status = result["status"]
+
+    print("\n--- PROBLEM 1 RESULT ---")
+    print("Detected R-peaks:", len(r_peaks))
+    print("Average Heart Rate:", round(avg_hr, 2), "BPM")
+    print("Signal Quality:", quality)
+    print("Heart Rate Status:", status)
+
+    print("\nRunning Problem 2: Irregular Rhythm and Possible AF Detection...")
+
+    rhythm_label, cv, rmssd = classify_rhythm(rr)
+
+    total_duration = len(raw_signal) / fs
+    segments = segment_wise_analysis(r_peaks, fs, total_duration, window_sec=10)
+
+    print("\n--- PROBLEM 2 RESULT ---")
+    print("Overall Rhythm:", rhythm_label)
+    print("RR Coefficient of Variation:", round(cv, 3))
+    print("RMSSD:", round(rmssd, 3))
+
+    print("\n--- SEGMENT-WISE RHYTHM ANALYSIS ---")
+    if len(segments) == 0:
+        print("Recording too short for segment-wise analysis.")
+    else:
+        for seg in segments:
+            print(
+                f"{seg['start']:.1f}s - {seg['end']:.1f}s | "
+                f"Beats={seg['beats']} | "
+                f"Mean HR={seg['mean_hr']:.2f} BPM | "
+                f"CV={seg['cv']:.3f} | "
+                f"RMSSD={seg['rmssd']:.3f} | "
+                f"{seg['label']}"
+            )
+
+    p_wave_ratio, p_wave_label = detect_p_wave_evidence(filtered, r_peaks, fs)
+    atrial_variability, atrial_label = atrial_activity_analysis(filtered, r_peaks, fs)
+    advanced_af_label = advanced_af_decision(rr, p_wave_ratio, atrial_variability)
+
+    print("\n--- ADVANCED AF EVIDENCE ---")
+    print("P-wave Ratio:", round(p_wave_ratio, 3))
+    print("P-wave Evidence:", p_wave_label)
+    print("Atrial Variability:", round(atrial_variability, 3))
+    print("Atrial Activity:", atrial_label)
+    print("Advanced AF Decision:", advanced_af_label)
+
+    rolling_results = rolling_window_analysis(raw_signal, fs, window_sec=30, step_sec=10)
+
+    print("\n--- REAL-TIME / ROLLING WINDOW ANALYSIS ---")
+    if len(rolling_results) == 0:
+        print("Recording too short for 30-second rolling window analysis.")
+    else:
+        for r in rolling_results:
+            print(
+                f"{r['start_sec']:.1f}s - {r['end_sec']:.1f}s | "
+                f"HR={r['avg_hr']:.2f} BPM | "
+                f"CV={r['cv']:.3f} | "
+                f"P-wave={r['p_wave_ratio']:.2f} | "
+                f"{r['af_decision']}"
+            )
+
+    print("\n--- FINAL INTERPRETATION ---")
+    print("Problem 1 detects R-peaks and calculates heart rate.")
+    print("Problem 2 uses the same R-peaks and RR intervals for rhythm and AF screening.")
+    print("P-wave and atrial activity checks are heuristic supportive features.")
+    print("This is a screening system, not a medical diagnosis tool.")
+
+    plot_all_results(raw_signal, filtered, r_peaks, rr, hr_series, fs)
+    plot_rolling_results(rolling_results)
+
+    return {
+        "raw_signal": raw_signal,
+        "filtered": filtered,
+        "r_peaks": r_peaks,
+        "rr": rr,
+        "hr_series": hr_series,
+        "avg_hr": avg_hr,
+        "quality": quality,
+        "status": status,
+        "rhythm_label": rhythm_label,
+        "cv": cv,
+        "rmssd": rmssd,
+        "segments": segments,
+        "p_wave_ratio": p_wave_ratio,
+        "p_wave_label": p_wave_label,
+        "atrial_variability": atrial_variability,
+        "atrial_label": atrial_label,
+        "advanced_af_label": advanced_af_label,
+        "rolling_results": rolling_results
+    }
+
+
+# =========================================================
+# 19. RUN
+# =========================================================
+if __name__ == "__main__":
+    filename = input("Enter ECG file path: ")
+    results = complete_ecg_pipeline(filename)
