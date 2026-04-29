@@ -24,6 +24,7 @@ Stress State	         ACTIVE / HIGH ENERGY	 Not Stress (Exercise/Active)
 This project analyzes a single-lead ECG signal and automatically detects:
 
 Heart Rate (BPM)
+
 R-peaks (Heartbeat locations)
 R-R intervals (Time between beats)
 Regular or irregular rhythm
