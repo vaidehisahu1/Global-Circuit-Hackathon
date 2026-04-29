@@ -424,102 +424,97 @@ def calculate_hrv_metrics(r_peaks, fs):
 
     return mean_rr, sdnn, rmssd, rr_intervals
 
-def detect_stress_state(hr, rmssd, quality):
+import datetime
+
+# =========================================
+# PROBLEM 4: ENHANCED STRESS LOGIC
+# =========================================
+
+def detect_stress_state_advanced(hr, rmssd, rr_intervals, quality, current_time=None):
     """
-    Determines stress level based on HR and RMSSD.
-    
-    Logic:
-    - Stress usually increases HR and DECREASES HRV (RMSSD).
-    - Relaxation usually decreases HR and INCREASES HRV (RMSSD).
+    Advanced Stress Detection with:
+    1. Circadian Rhythm Check (Time of Day)
+    2. Dynamic Thresholds (Relative Change)
     """
     
-    # If signal is bad, we cannot accurately detect stress
+    # 1. QUALITY CHECK
     if quality == "POOR":
-        return "CANNOT ASSESS (Poor Signal)"
+        return "CANNOT ASSESS (Poor Signal)", 0.0
 
-    # Thresholds (Typical clinical indicators)
-    # RMSSD < 20ms (0.020s) often indicates high stress / low vagal tone
-    # RMSSD > 50ms (0.050s) often indicates relaxed state
+    # 2. CIRCADIAN RHYTHM CHECK (Tackling Sleep vs Stress)
+    # If no time provided, assume current system time
+    if current_time is None:
+        current_time = datetime.datetime.now().time()
     
-    stress_level = "NORMAL"
+    hour = current_time.hour
     
-    # High HR and Low Variability
-    if hr > 90 and rmssd < 0.020:
-        stress_level = "HIGH STRESS"
-    # Normal HR but Low Variability
-    elif hr > 70 and rmssd < 0.020:
-        stress_level = "ELEVATED STRESS"
-    # Low HR and High Variability
-    elif hr < 70 and rmssd > 0.050:
-        stress_level = "RELAXED"
+    # Define "Sleep Hours" (e.g., 11 PM to 6 AM)
+    is_sleep_time = (hour >= 23) or (hour < 6)
+
+    # 3. DYNAMIC THRESHOLD (Tackling Individual Variability)
+    # Instead of fixed thresholds, we look at the VARIATION in the signal itself.
+    # We calculate the Coefficient of Variation (CV) for the current window.
+    if len(rr_intervals) > 1:
+        mean_rr = np.mean(rr_intervals)
+        std_rr = np.std(rr_intervals)
+        cv = std_rr / mean_rr  # Relative variability
     else:
-        stress_level = "NORMAL / NEUTRAL"
+        cv = 0
 
-    return stress_level
+    # --- CLASSIFICATION LOGIC ---
+    
+    # Case A: Sleep Mode
+    if is_sleep_time:
+        # During sleep, low HR and high variability are normal.
+        # We suppress "Relaxed" alerts to avoid redundant info, focus on anomalies.
+        if hr > 100: 
+            return "UNUSUAL NIGHTTIME HR (Check Health)", 0.9
+        else:
+            return "SLEEP / REST STATE", 0.95
+
+    # Case B: Stress Detection (Relative to Normal)
+    # A sudden drop in variability (CV < 0.05 implies very rigid heart)
+    # AND High HR implies Acute Stress
+    
+    if hr > 90 and cv < 0.05:
+        return "HIGH STRESS (Low Variability)", 0.90
+        
+    # Case C: "Flow State" or Exercise
+    # High HR but STILL High Variability (Body is working, but not "stressed" mentally)
+    elif hr > 90 and cv > 0.10:
+        return "ACTIVE / HIGH ENERGY (Not Stress)", 0.80
+        
+    # Case D: Relaxed
+    elif hr < 75 and rmssd > 0.050:
+        return "RELAXED", 0.90
+
+    # Case E: Normal
+    else:
+        return "NORMAL / NEUTRAL", 0.70
 
 # =========================================
-# MAIN EXECUTION
+# ENHANCED EXECUTION BLOCK
 # =========================================
-filename = input("Enter ECG file path: ")
-
-ftype = detect_file_type(filename)
-
-if ftype == "xml":
-    ecg_signal, timestamps, fs = parse_xml_ecg(filename)
-else:
-    ecg_signal, timestamps = parse_binary_ecg(filename)
-    fs = estimate_sampling_rate(timestamps)
-
-print("="*40)
-print(f"File Type: {ftype}")
-print(f"Sampling Rate: {fs} Hz")
-print("="*40)
 
 # 1. Run Problem 1 Analysis (Foundation)
 hr, quality, stability, status, r_peaks, filtered = smart_ecg_analysis(ecg_signal, fs)
 
 # 2. Run Problem 4 Analysis (Extension)
 mean_rr, sdnn, rmssd, rr_intervals = calculate_hrv_metrics(r_peaks, fs)
-stress_state = detect_stress_state(hr, rmssd, quality)
 
-# 3. Print Results
-print("\n--- PROBLEM 1 RESULTS ---")
+# 3. Run Enhanced Stress Detection
+# You can change the time below to test "Sleep" vs "Work" scenarios!
+# e.g., simulate night time: datetime.time(2, 0) -> 2 AM
+stress_state, confidence = detect_stress_state_advanced(hr, rmssd, rr_intervals, quality, current_time=None)
+
+# 4. Print Results
+print("\n" + "="*40)
+print("--- PROBLEM 4 RESULTS (ENHANCED) ---")
+print("="*40)
 print(f"Heart Rate: {round(hr, 2)} BPM")
-print(f"Signal Quality: {quality}")
-print(f"Rhythm Status: {status}")
-
-print("\n--- PROBLEM 4 RESULTS (STRESS ANALYSIS) ---")
-print(f"Mean RR Interval: {round(mean_rr * 1000, 2)} ms")
-print(f"SDNN (Variability): {round(sdnn * 1000, 2)} ms")
-print(f"RMSSD (Stress Indicator): {round(rmssd * 1000, 2)} ms")
+print(f"RMSSD (Variability): {round(rmssd * 1000, 2)} ms")
+print(f"Coefficient of Variation (CV): {round(np.std(rr_intervals)/np.mean(rr_intervals), 3)}")
+print(f"Current Time: {datetime.datetime.now().strftime('%H:%M:%S')}")
 print(f"DETECTED STATE: {stress_state}")
-
-# =========================================
-# VISUALIZATION
-# =========================================
-time = np.arange(len(filtered)) / fs
-plot_signal = filtered / np.max(np.abs(filtered))
-
-# Plot 1: Signal Quality Check
-plt.figure(figsize=(12, 4))
-plt.plot(time, plot_signal, color='black', alpha=0.7)
-plt.title(f"Filtered ECG | HR: {round(hr)} BPM | State: {stress_state}")
-plt.xlabel("Time (s)")
-plt.ylabel("Normalized Amplitude")
-plt.grid(True, alpha=0.3)
-plt.show()
-
-# Plot 2: HRV Trend (If enough data)
-if len(rr_intervals) > 1:
-    plt.figure(figsize=(10, 4))
-    plt.plot(rr_intervals * 1000, marker='o', linestyle='-', color='green')
-    plt.title("R-R Interval Trend (Beat-to-Beat)")
-    plt.ylabel("R-R Interval (ms)")
-    plt.xlabel("Beat Number")
-    plt.grid(True)
-    
-    # Highlight low variability (Stress zones)
-    # If intervals are very tight (flat line), stress is high
-    plt.axhline(np.mean(rr_intervals)*1000, color='red', linestyle='--', label='Mean RR')
-    plt.legend()
-    plt.show()
+print(f"CONFIDENCE: {confidence * 100}%")
+print("="*40)
