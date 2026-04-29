@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECG Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">THE VITAL VOYAGERS</div>
+            <ul class="nav-links">
+                <li><a href="#" class="active">Home</a></li>
+                <li><a href="#">Analysis</a></li>
+                <li><a href="#">About Us</a></li>
+                <li><a href="#">Contact</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <div class="team-badge">THE VITAL VOYAGERS</div>
+            <div class="logo">
+                <!-- SVG Recreation of the interlocking triangles logo -->
+                <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 10 L10 80 L90 80 Z" stroke="#002147" stroke-width="4" fill="none"/>
+                    <path d="M50 25 L25 70 L75 70 Z" stroke="#002147" stroke-width="4" fill="none"/>
+                    <path d="M50 40 L40 60 L60 60 Z" stroke="#002147" stroke-width="4" fill="none"/>
+                </svg>
+            </div>
+            <h1 class="brand-title">CardioSync</h1>
+            <p class="subtitle">Advanced ECG Analysis & Rhythm Classification</p>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Upload Section -->
+            <section id="upload-section" class="card intro-card">
+                <div class="intro-text">
+                    <h2>Smart ECG Analyzer</h2>
+                    <p class="intro-lead">Heart Rate Detection • Rhythm Analysis • AF Screening</p>
+                    <p class="intro-desc">This clinical tool analyzes single-lead ECG signals to automatically detect heart rate, R-peaks, irregular rhythms, and possible Atrial Fibrillation patterns. Upload your XML or binary ECG file below for a comprehensive screening.</p>
+                    <p class="intro-disclaimer"><em>Note: This is a screening tool, not a medical diagnosis. Doctor validation is required for clinical use.</em></p>
+                </div>
+
+                <div class="upload-zone" id="drop-zone">
+                    <input type="file" id="file-input" accept=".xml,.aecg,.bin,.dat" hidden>
+                    <div class="upload-content">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p class="upload-text">Click to browse or drag and drop</p>
+                        <p class="upload-subtext">Supports XML and Binary formats</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Loading State -->
+            <section id="loading-section" class="hidden">
+                <div class="spinner"></div>
+                <p>Analyzing signal data...</p>
+            </section>
+
+            <!-- Error State -->
+            <section id="error-section" class="hidden card error-card">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p id="error-message">An error occurred.</p>
+                <button id="retry-btn" class="btn">Try Again</button>
+            </section>
+
+            <!-- Results Section -->
+            <section id="results-section" class="hidden">
+                
+                <!-- Tab Navigation -->
+                <div class="tab-nav">
+                    <button class="tab-btn active" data-target="tab-overview">Overview</button>
+                    <button class="tab-btn" data-target="tab-problem1">Problem 1: Heart Rate</button>
+                    <button class="tab-btn" data-target="tab-problem2">Problem 2: Rhythm & AFib</button>
+                    <button class="tab-btn" data-target="tab-problem4">Problem 4: Stress</button>
+                    <button class="tab-btn" data-target="tab-full" id="btn-full-report">Full Report</button>
+                </div>
+
+                <!-- TAB: OVERVIEW -->
+                <div id="tab-overview" class="tab-pane active">
+                    <!-- Quick Summary -->
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <span class="label">Average Heart Rate</span>
+                            <div class="value-container">
+                                <span class="value" id="val-hr">--</span>
+                                <span class="unit">BPM</span>
+                            </div>
+                            <span class="status-badge" id="status-hr">Processing</span>
+                        </div>
+                        <div class="summary-card">
+                            <span class="label">Signal Quality</span>
+                            <div class="value-container">
+                                <span class="value" id="val-quality">--</span>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <span class="label">Overall Rhythm</span>
+                            <div class="value-container">
+                                <span class="value rhythm-val" id="val-rhythm">--</span>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <span class="label">AFib Decision</span>
+                            <div class="value-container">
+                                <span class="value afib-val" id="val-afib">--</span>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <span class="label">Stress State</span>
+                            <div class="value-container">
+                                <span class="value stress-val" id="val-stress">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: PROBLEM 1 (Heart Rate) -->
+                <div id="tab-problem1" class="tab-pane">
+                    <div class="graphs-container">
+                        <div class="card graph-card">
+                            <h3>Raw ECG Signal</h3>
+                            <div class="img-wrapper">
+                                <img id="img-raw" class="ecg-graph" src="" alt="Raw ECG">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card graph-card">
+                            <h3>Filtered ECG with R-Peaks</h3>
+                            <div class="img-wrapper">
+                                <img id="img-filtered" class="ecg-graph" src="" alt="Filtered ECG">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card graph-card">
+                            <h3>ECG Paper Style Output</h3>
+                            <div class="img-wrapper">
+                                <img id="img-paper" class="ecg-graph" src="" alt="ECG Paper">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card graph-card">
+                            <h3>Heart Rate Trend</h3>
+                            <div class="img-wrapper">
+                                <img id="img-hr-trend" class="ecg-graph" src="" alt="HR Trend">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: PROBLEM 2 (Rhythm & AFib) -->
+                <div id="tab-problem2" class="tab-pane">
+                    <div class="metrics-grid">
+                        <div class="card">
+                            <h3>Rhythm Analysis</h3>
+                            <div class="metric-list">
+                                <div class="metric-row">
+                                    <span>Coefficient of Variation (CV)</span>
+                                    <strong id="val-cv">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>RMSSD</span>
+                                    <strong id="val-rmssd">--</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>Atrial Activity</h3>
+                            <div class="metric-list">
+                                <div class="metric-row">
+                                    <span>P-Wave Evidence</span>
+                                    <strong id="val-pwave">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Atrial Variability</span>
+                                    <strong id="val-atrial">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Status</span>
+                                    <strong id="val-atrial-status">--</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="secondary-graphs">
+                        <div class="card">
+                            <h3>RR Interval Distribution</h3>
+                            <div class="img-wrapper">
+                                <img id="img-rr-dist" class="ecg-graph" src="" alt="RR Distribution">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>Poincaré Plot</h3>
+                            <div class="img-wrapper">
+                                <img id="img-poincare" class="ecg-graph" src="" alt="Poincaré Plot">
+                                <div class="img-actions">
+                                    <button class="icon-btn zoom-btn" title="Zoom In"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg></button>
+                                    <button class="icon-btn dl-img-btn" title="Download Image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: PROBLEM 4 (Stress) -->
+                <div id="tab-problem4" class="tab-pane">
+                    <div class="metrics-grid">
+                        <div class="card">
+                            <h3>HRV Metrics for Stress</h3>
+                            <div class="metric-list">
+                                <div class="metric-row">
+                                    <span>SDNN (Time Domain)</span>
+                                    <strong id="val-sdnn">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>RMSSD (Vagal Tone)</span>
+                                    <strong id="val-stress-rmssd">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Detected State</span>
+                                    <strong id="val-stress-state" class="stress-val">--</strong>
+                                </div>
+                                <div class="metric-row">
+                                    <span>Confidence</span>
+                                    <strong id="val-stress-confidence">--</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Action Bar -->
+            <div class="action-bar hidden" id="action-bar">
+                <button class="btn btn-primary" id="download-report-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Detailed Report
+                </button>
+                <button class="btn btn-secondary" id="reset-btn" style="margin-left: 1rem; background: transparent; color: var(--accent); border: 1px solid var(--accent);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem;">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    Back to Home Page
+                </button>
+            </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="image-modal" class="modal hidden">
+        <span class="modal-close">&times;</span>
+        <img class="modal-content" id="modal-img">
+        <div id="modal-caption"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <h3>CardioSync</h3>
+                <p>Advanced ECG Analysis & Rhythm Classification</p>
+            </div>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Documentation</a>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 The Vital Voyagers. All rights reserved.</p>
+                <p class="footer-disclaimer">Not intended for medical diagnosis without professional validation.</p>
+            </div>
+        </div>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>
