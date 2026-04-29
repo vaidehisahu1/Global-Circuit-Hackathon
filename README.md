@@ -5,21 +5,19 @@ A robust system for heart rate detection from single-lead ECG signals that works
 
 🚀 Features of the Web App
 Instant Analysis: Upload your ECG file and get results in seconds.
-
 Visual Dashboard: Interactive plots for ECG strips, Heart Rate Trends, and Poincaré plots.
-
 Detailed Metrics: View Heart Rate, Rhythm Classification (Normal/AF), and Stress State side-by-side.
-
 Clinical Report: Generates a summary similar to the PDF report output shown below.
 
 📄 Sample Report Output
 The web app generates a comprehensive analysis report including:
 
-METRIC	VALUE	INTERPRETATION
-Average Heart Rate	138.4 BPM	High Heart Rate
-Signal Quality	GOOD	Reliable Data
-Overall Rhythm	Possible AF	Irregularly Irregular
-Stress State	ACTIVE / HIGH ENERGY	Not Stress (Exercise/Active)
+METRIC	             VALUE	                  INTERPRETATION
+Average Heart Rate	 138.4 BPM	              High Heart Rate
+Signal Quality	     GOOD	                    Reliable Data
+Overall Rhythm	     Possible AF	            Irregularly Irregular
+Stress State	       ACTIVE / HIGH ENERGY	Not Stress (Exercise/Active)
+
 📋 Project Overview
 This project analyzes a single-lead ECG signal and automatically detects:
 
@@ -31,6 +29,7 @@ Possible Atrial Fibrillation (AF) patterns
 Heart Rate Variability (HRV) metrics
 Physiological Stress vs. Relaxation states
 Segment-wise rhythm changes for long recordings
+
 📌 Why This Project?
 ECG signals are the gold standard for monitoring heart health, but raw signals are hard to interpret. This project transforms raw waves into actionable insights by answering three key questions:
 
@@ -42,11 +41,18 @@ It combines signal processing, clinical logic, and autonomic nervous system anal
 🧠 Simple Flow of the Code
 The system follows a logical pipeline from raw data to final diagnosis:
 
-Start
+
 User uploads ECG file (.xml or binary)
-Load & Parse Data
+
+Load & Parse Data 
+|
+▼
 Preprocessing (Bandpass Filter to remove noise)
+|
+▼
 [Problem 1] Detect R-peaks & Calculate Heart Rate
+|
+▼
 [Problem 2] Analyze R-R Intervals (Regularity)
 [Problem 2] Check for AF (P-wave absence + Irregularity)
 [Problem 4] Calculate HRV Metrics (RMSSD, Variability)
