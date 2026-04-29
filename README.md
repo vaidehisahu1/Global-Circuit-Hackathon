@@ -3,23 +3,37 @@ The Vital Voyagers
 
 A robust system for heart rate detection from single-lead ECG signals that works across both HL7 aECG (XML) and custom binary formats, even in the presence of noise, motion artifacts, and signal irregularities.
 
+
 🚀 Features of the Web App
 Instant Analysis: Upload your ECG file and get results in seconds.
+
 Visual Dashboard: Interactive plots for ECG strips, Heart Rate Trends, and Poincaré plots.
+
 Detailed Metrics: View Heart Rate, Rhythm Classification (Normal/AF), and Stress State side-by-side.
+
 Clinical Report: Generates a summary similar to the PDF report output shown below.
 
 It supports multiple input formats (XML + Binary) and works reliably even with noise, motion artifacts, and signal distortion.
 
+
 🚀 Key Features
+
 Multi-format ECG parsing (HL7 aECG XML + Binary)
+
 Noise-resistant signal processing pipeline
+
 Dual R-peak detection (NeuroKit + fallback logic)
+
 Heart rate and RR interval computation
+
 Rhythm classification using CV & RMSSD
+
 Atrial Fibrillation (AF) screening
+
 Stress detection using HRV
+
 Clinical-style ECG visualization (grid + strips)
+
 Rolling window analysis for long-duration ECG
 
 
@@ -43,6 +57,7 @@ AF Detection (Irregularity + P-wave absence)
 HRV Analysis (Stress Detection)
         ↓
 Visualization + Final Output
+
 
 ⚙️ Core Methodology
 1. Signal Preprocessing
@@ -93,6 +108,7 @@ High HR + Low HRV	Stress
 High HR + High HRV	Physical Activity
 Low HR + High HRV	Relaxed
 
+
 📊 Visualizations
 The system generates:
 
@@ -106,6 +122,7 @@ FFT spectrum
 Rolling window analysis graphs
 
 🧩 Problem Mapping
+
 ✅ Problem 1: Heart Rate Detection
 R-peak detection
 RR interval calculation
@@ -122,7 +139,9 @@ HRV metrics (RMSSD, SDNN)
 ANS-based classification
 Context-aware stress vs activity detection
 
+
 📂 Input Formats
+
 XML (HL7 aECG)
 ECG samples stored in <Sample> tags
 Includes sampling rate metadata
@@ -131,31 +150,13 @@ Binary Format
 2 bytes → ECG value (int16)
 8 bytes → timestamp (int64)
 
-▶️ How to Run
-1. Install Dependencies
-pip install numpy matplotlib scipy neurokit2
-2. Run Script
-python main.py
-3. Input File
-Enter ECG file path: your_file.xml
-
-🖥️ Example Output
---- UNIVERSAL SMART ECG ANALYZER ---
-Heart Rate: 92.28 BPM
-Signal Quality: GOOD
-Status: IRREGULAR RHYTHM
-
---- AF ANALYSIS ---
-Possible AF detected
-
---- STRESS ANALYSIS ---
-State: ACTIVE / HIGH ENERGY
 
 ⚠️ Limitations
 Not calibrated in medical units (mV)
 Not clinically certified
 Accuracy depends on signal quality
 Short recordings reduce reliability
+
 
 🔮 Future Scope
 Real-time monitoring dashboard
