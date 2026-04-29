@@ -1,0 +1,525 @@
+!pip install neurokit2
+import numpy as np
+import matplotlib.pyplot as plt
+import struct
+import xml.etree.ElementTree as ET
+import neurokit2 as nk
+import warnings
+from scipy.signal import butter, filtfilt, find_peaks, savgol_filter
+
+# =========================================
+# FILE TYPE
+# =========================================
+def detect_file_type(filename):
+    return "xml" if filename.endswith((".aecg", ".xml")) else "binary"
+
+# =========================================
+# XML PARSER
+# =========================================
+def parse_xml_ecg(filename):
+    tree = ET.parse(filename)
+    root = tree.getroot()
+
+    values = []
+    for sample in root.findall(".//Sample"):
+        try:
+            values.append(float(sample.text))
+        except:
+            pass
+
+    values = np.array(values)
+
+    sr = root.find(".//SamplingRateHz")
+    fs = float(sr.text) if sr is not None else 250
+
+    timestamps = np.arange(len(values)) / fs
+    return values, timestamps, fs
+
+# =========================================
+# BINARY PARSER
+# =========================================
+def parse_binary_ecg(filename):
+    values = []
+    timestamps = []
+
+    with open(filename, "rb") as f:
+        while True:
+            chunk = f.read(10)
+            if len(chunk) < 10:
+                break
+
+            values.append(struct.unpack("<h", chunk[:2])[0])
+            timestamps.append(struct.unpack("<q", chunk[2:])[0])
+
+    return np.array(values), np.array(timestamps)
+
+# =========================================
+# SAMPLING RATE
+# =========================================
+def estimate_sampling_rate(timestamps):
+    if len(timestamps) < 2:
+        return 250
+
+    diffs = np.diff(timestamps)
+    diffs = diffs[diffs > 0]
+
+    if len(diffs) == 0:
+        return 250
+
+    return int(1000 / np.mean(diffs))
+
+# =========================================
+# FILTER
+# =========================================
+def bandpass_filter(signal, fs, low=0.5, high=40):
+    nyq = 0.5 * fs
+    b, a = butter(2, [low/nyq, high/nyq], btype='band')
+    return filtfilt(b, a, signal)
+
+# =========================================
+# ECG GRID (REALISTIC LOOK)
+# =========================================
+def add_ecg_grid(ax):
+    small_x = 0.04   # 1 mm (time)
+    big_x = 0.2      # 5 mm
+
+    small_y = 0.1
+    big_y = 0.5
+
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+
+    # vertical
+    for x in np.arange(xmin, xmax, small_x):
+        ax.axvline(x, color='lightcoral', lw=0.3, alpha=0.3)
+    for x in np.arange(xmin, xmax, big_x):
+        ax.axvline(x, color='red', lw=0.8, alpha=0.5)
+
+    # horizontal
+    for y in np.arange(ymin, ymax, small_y):
+        ax.axhline(y, color='lightcoral', lw=0.3, alpha=0.3)
+    for y in np.arange(ymin, ymax, big_y):
+        ax.axhline(y, color='red', lw=0.8, alpha=0.5)
+
+# =========================================
+# ECG ANALYSIS
+# =========================================
+def smart_ecg_analysis(ecg_signal, fs):
+
+    print("Signal length:", len(ecg_signal))
+    print("First few values:", ecg_signal[:10])
+
+    filtered = bandpass_filter(ecg_signal, fs)
+    filtered = (filtered - np.mean(filtered)) / np.std(filtered)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        try:
+            _, info = nk.ecg_process(filtered, sampling_rate=fs)
+            r_peaks = info["ECG_R_Peaks"]
+
+            if len(r_peaks) < 2:
+                raise Exception("Too few peaks")
+
+        except:
+            peaks, _ = find_peaks(
+                filtered,
+                distance=int(0.4 * fs),
+                height=0.5
+            )
+            r_peaks = peaks
+
+    if len(r_peaks) < 2:
+        return 0, "POOR", "UNSTABLE", "NO PEAKS", r_peaks, filtered
+
+    rr = np.diff(r_peaks) / fs
+    clean_rr = [x for x in rr if 0.4 < x < 1.5]
+
+    if len(clean_rr) == 0:
+        return 0, "POOR", "UNSTABLE", "INVALID RR", r_peaks, filtered
+
+    hr = 60 / np.mean(clean_rr)
+
+    quality = "GOOD" if np.var(filtered) > 0.5 else "POOR"
+    stability = "STABLE" if np.std(clean_rr) * 60 < 5 else "FLUCTUATING"
+
+    if quality == "POOR":
+        status = "CHECK SIGNAL"
+    elif hr < 60 or hr > 100:
+        status = "ABNORMAL HR"
+    elif stability == "FLUCTUATING":
+        status = "IRREGULAR RHYTHM"
+    else:
+        status = "NORMAL"
+
+    return hr, quality, stability, status, r_peaks, filtered
+
+# =========================================
+# MAIN
+# =========================================
+filename = input("Enter ECG file path: ")
+
+ftype = detect_file_type(filename)
+
+if ftype == "xml":
+    ecg_signal, timestamps, fs = parse_xml_ecg(filename)
+else:
+    ecg_signal, timestamps = parse_binary_ecg(filename)
+    fs = estimate_sampling_rate(timestamps)
+
+print("File Type Detected:", ftype)
+print("Sampling Rate:", fs)
+
+hr, quality, stability, status, r_peaks, filtered = smart_ecg_analysis(ecg_signal, fs)
+
+print("\n--- UNIVERSAL SMART ECG ANALYZER ---")
+print("Heart Rate:", round(hr, 2), "BPM")
+print("Signal Quality:", quality)
+print("Stability:", stability)
+print("Status:", status)
+
+# =========================================
+# VISUALIZATION
+# =========================================
+time = np.arange(len(filtered)) / fs
+plot_signal = filtered / np.max(np.abs(filtered))
+smooth = savgol_filter(plot_signal, 31, 2)
+
+# ---- FULL SIGNAL
+plt.figure(figsize=(14,4))
+plt.plot(time, smooth, color='black')
+ax = plt.gca()
+add_ecg_grid(ax)
+plt.title("Full ECG Signal (ECG Paper Style)")
+plt.tight_layout()
+plt.show()
+
+# ---- ZOOM
+plt.figure(figsize=(14,4))
+plt.plot(time, smooth, color='black')
+
+if len(r_peaks):
+    plt.scatter(np.array(r_peaks)/fs, smooth[r_peaks], color='blue')
+
+plt.xlim(0, min(5, time[-1]))
+ax = plt.gca()
+add_ecg_grid(ax)
+
+plt.title("Zoomed ECG")
+plt.tight_layout()
+plt.show()
+
+# ---- STRIPS
+window = int(3 * fs)
+segments = min(5, len(filtered)//window)
+
+plt.figure(figsize=(14, segments*2))
+
+for i in range(segments):
+    start = i * window
+    end = start + window
+
+    plt.subplot(segments,1,i+1)
+    seg = smooth[start:end]
+    t_seg = np.arange(len(seg)) / fs
+
+    plt.plot(t_seg, seg, color='black')
+
+    peaks = [p-start for p in r_peaks if start <= p < end]
+    if peaks:
+        plt.scatter(t_seg[peaks], seg[peaks], color='blue')
+
+    ax = plt.gca()
+    add_ecg_grid(ax)
+
+    plt.title(f"ECG Strip {i+1}")
+
+plt.tight_layout()
+plt.show()
+
+# ---- RR
+if len(r_peaks) > 1:
+    rr = np.diff(r_peaks)/fs
+
+    plt.figure(figsize=(10,4))
+    plt.plot(rr, marker='o')
+    plt.title("RR Interval Variability")
+    plt.grid(True)
+    plt.show()
+
+# ---- HR
+if len(r_peaks) > 1:
+    hr_series = 60 / (np.diff(r_peaks)/fs)
+
+    plt.figure(figsize=(10,4))
+    plt.plot(hr_series, marker='o')
+    plt.axhline(60, linestyle='--')
+    plt.axhline(100, linestyle='--')
+    plt.title("Heart Rate Trend")
+    plt.grid(True)
+    plt.show()
+
+# ---- POINCARE
+if len(r_peaks) > 2:
+    rr = np.diff(r_peaks)/fs
+
+    plt.figure(figsize=(5,5))
+    plt.scatter(rr[:-1], rr[1:])
+    plt.title("Poincaré Plot")
+    plt.grid(True)
+    plt.show()
+
+import numpy as np
+import matplotlib.pyplot as plt
+import struct
+import xml.etree.ElementTree as ET
+import neurokit2 as nk
+import warnings
+from scipy.signal import butter, filtfilt, find_peaks, savgol_filter
+
+# =========================================
+# FILE TYPE
+# =========================================
+def detect_file_type(filename):
+    return "xml" if filename.endswith((".aecg", ".xml")) else "binary"
+
+# =========================================
+# XML PARSER
+# =========================================
+def parse_xml_ecg(filename):
+    tree = ET.parse(filename)
+    root = tree.getroot()
+
+    values = []
+    for sample in root.findall(".//Sample"):
+        try:
+            values.append(float(sample.text))
+        except:
+            pass
+
+    values = np.array(values)
+
+    sr = root.find(".//SamplingRateHz")
+    fs = float(sr.text) if sr is not None else 250
+
+    timestamps = np.arange(len(values)) / fs
+    return values, timestamps, fs
+
+# =========================================
+# BINARY PARSER
+# =========================================
+def parse_binary_ecg(filename):
+    values = []
+    timestamps = []
+
+    with open(filename, "rb") as f:
+        while True:
+            chunk = f.read(10)
+            if len(chunk) < 10:
+                break
+
+            values.append(struct.unpack("<h", chunk[:2])[0])
+            timestamps.append(struct.unpack("<q", chunk[2:])[0])
+
+    return np.array(values), np.array(timestamps)
+
+# =========================================
+# SAMPLING RATE
+# =========================================
+def estimate_sampling_rate(timestamps):
+    if len(timestamps) < 2:
+        return 250
+
+    diffs = np.diff(timestamps)
+    diffs = diffs[diffs > 0]
+
+    if len(diffs) == 0:
+        return 250
+
+    return int(1000 / np.mean(diffs))
+
+# =========================================
+# FILTER
+# =========================================
+def bandpass_filter(signal, fs, low=0.5, high=40):
+    nyq = 0.5 * fs
+    b, a = butter(2, [low/nyq, high/nyq], btype='band')
+    return filtfilt(b, a, signal)
+
+# =========================================
+# ECG ANALYSIS (FROM PROBLEM 1)
+# =========================================
+def smart_ecg_analysis(ecg_signal, fs):
+
+    filtered = bandpass_filter(ecg_signal, fs)
+    filtered = (filtered - np.mean(filtered)) / np.std(filtered)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        try:
+            _, info = nk.ecg_process(filtered, sampling_rate=fs)
+            r_peaks = info["ECG_R_Peaks"]
+
+            if len(r_peaks) < 2:
+                raise Exception("Too few peaks")
+
+        except:
+            peaks, _ = find_peaks(
+                filtered,
+                distance=int(0.4 * fs),
+                height=0.5
+            )
+            r_peaks = peaks
+
+    if len(r_peaks) < 2:
+        return 0, "POOR", "UNSTABLE", "NO PEAKS", r_peaks, filtered
+
+    rr = np.diff(r_peaks) / fs
+    clean_rr = [x for x in rr if 0.4 < x < 1.5]
+
+    if len(clean_rr) == 0:
+        return 0, "POOR", "UNSTABLE", "INVALID RR", r_peaks, filtered
+
+    hr = 60 / np.mean(clean_rr)
+
+    quality = "GOOD" if np.var(filtered) > 0.5 else "POOR"
+    stability = "STABLE" if np.std(clean_rr) * 60 < 5 else "FLUCTUATING"
+
+    if quality == "POOR":
+        status = "CHECK SIGNAL"
+    elif hr < 60 or hr > 100:
+        status = "ABNORMAL HR"
+    elif stability == "FLUCTUATING":
+        status = "IRREGULAR RHYTHM"
+    else:
+        status = "NORMAL"
+
+    return hr, quality, stability, status, r_peaks, filtered
+
+# =========================================
+# PROBLEM 4: STRESS DETECTION LOGIC
+# =========================================
+def calculate_hrv_metrics(r_peaks, fs):
+    """
+    Calculates Heart Rate Variability (HRV) metrics from R-peaks.
+    """
+    # 1. Calculate R-R intervals in seconds
+    rr_intervals = np.diff(r_peaks) / fs
+    
+    if len(rr_intervals) < 2:
+        return 0, 0, 0, rr_intervals
+
+    # 2. SDNN: Standard Deviation of NN intervals (Time Domain)
+    sdnn = np.std(rr_intervals)
+
+    # 3. RMSSD: Root Mean Square of Successive Differences
+    # Most sensitive indicator of stress (vagal tone)
+    diff_rr = np.diff(rr_intervals)
+    rmssd = np.sqrt(np.mean(diff_rr ** 2))
+
+    # 4. Mean RR
+    mean_rr = np.mean(rr_intervals)
+
+    return mean_rr, sdnn, rmssd, rr_intervals
+
+def detect_stress_state(hr, rmssd, quality):
+    """
+    Determines stress level based on HR and RMSSD.
+    
+    Logic:
+    - Stress usually increases HR and DECREASES HRV (RMSSD).
+    - Relaxation usually decreases HR and INCREASES HRV (RMSSD).
+    """
+    
+    # If signal is bad, we cannot accurately detect stress
+    if quality == "POOR":
+        return "CANNOT ASSESS (Poor Signal)"
+
+    # Thresholds (Typical clinical indicators)
+    # RMSSD < 20ms (0.020s) often indicates high stress / low vagal tone
+    # RMSSD > 50ms (0.050s) often indicates relaxed state
+    
+    stress_level = "NORMAL"
+    
+    # High HR and Low Variability
+    if hr > 90 and rmssd < 0.020:
+        stress_level = "HIGH STRESS"
+    # Normal HR but Low Variability
+    elif hr > 70 and rmssd < 0.020:
+        stress_level = "ELEVATED STRESS"
+    # Low HR and High Variability
+    elif hr < 70 and rmssd > 0.050:
+        stress_level = "RELAXED"
+    else:
+        stress_level = "NORMAL / NEUTRAL"
+
+    return stress_level
+
+# =========================================
+# MAIN EXECUTION
+# =========================================
+filename = input("Enter ECG file path: ")
+
+ftype = detect_file_type(filename)
+
+if ftype == "xml":
+    ecg_signal, timestamps, fs = parse_xml_ecg(filename)
+else:
+    ecg_signal, timestamps = parse_binary_ecg(filename)
+    fs = estimate_sampling_rate(timestamps)
+
+print("="*40)
+print(f"File Type: {ftype}")
+print(f"Sampling Rate: {fs} Hz")
+print("="*40)
+
+# 1. Run Problem 1 Analysis (Foundation)
+hr, quality, stability, status, r_peaks, filtered = smart_ecg_analysis(ecg_signal, fs)
+
+# 2. Run Problem 4 Analysis (Extension)
+mean_rr, sdnn, rmssd, rr_intervals = calculate_hrv_metrics(r_peaks, fs)
+stress_state = detect_stress_state(hr, rmssd, quality)
+
+# 3. Print Results
+print("\n--- PROBLEM 1 RESULTS ---")
+print(f"Heart Rate: {round(hr, 2)} BPM")
+print(f"Signal Quality: {quality}")
+print(f"Rhythm Status: {status}")
+
+print("\n--- PROBLEM 4 RESULTS (STRESS ANALYSIS) ---")
+print(f"Mean RR Interval: {round(mean_rr * 1000, 2)} ms")
+print(f"SDNN (Variability): {round(sdnn * 1000, 2)} ms")
+print(f"RMSSD (Stress Indicator): {round(rmssd * 1000, 2)} ms")
+print(f"DETECTED STATE: {stress_state}")
+
+# =========================================
+# VISUALIZATION
+# =========================================
+time = np.arange(len(filtered)) / fs
+plot_signal = filtered / np.max(np.abs(filtered))
+
+# Plot 1: Signal Quality Check
+plt.figure(figsize=(12, 4))
+plt.plot(time, plot_signal, color='black', alpha=0.7)
+plt.title(f"Filtered ECG | HR: {round(hr)} BPM | State: {stress_state}")
+plt.xlabel("Time (s)")
+plt.ylabel("Normalized Amplitude")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# Plot 2: HRV Trend (If enough data)
+if len(rr_intervals) > 1:
+    plt.figure(figsize=(10, 4))
+    plt.plot(rr_intervals * 1000, marker='o', linestyle='-', color='green')
+    plt.title("R-R Interval Trend (Beat-to-Beat)")
+    plt.ylabel("R-R Interval (ms)")
+    plt.xlabel("Beat Number")
+    plt.grid(True)
+    
+    # Highlight low variability (Stress zones)
+    # If intervals are very tight (flat line), stress is high
+    plt.axhline(np.mean(rr_intervals)*1000, color='red', linestyle='--', label='Mean RR')
+    plt.legend()
+    plt.show()
