@@ -5,9 +5,13 @@ A robust system for heart rate detection from single-lead ECG signals that works
 
 🚀 Features of the Web App
 Instant Analysis: Upload your ECG file and get results in seconds.
+
 Visual Dashboard: Interactive plots for ECG strips, Heart Rate Trends, and Poincaré plots.
+
 Detailed Metrics: View Heart Rate, Rhythm Classification (Normal/AF), and Stress State side-by-side.
+
 Clinical Report: Generates a summary similar to the PDF report output shown below.
+
 📄 Sample Report Output
 The web app generates a comprehensive analysis report including:
 
